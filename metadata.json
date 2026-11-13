@@ -1,0 +1,6 @@
+{
+  "name": "TagSwipe",
+  "description": "Full-screen image captioning and metadata tagging via customizable directional swipes and hardware keyboard hotkeys.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
