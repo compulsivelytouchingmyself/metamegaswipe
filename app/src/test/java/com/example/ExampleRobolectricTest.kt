@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.SettingsRepository
 import com.example.model.SwipeDirection
 import com.example.model.TaggingMode
+import com.example.model.WidescreenLayoutMode
 import com.example.model.keyCodeToReadableLabel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -37,6 +38,7 @@ class ExampleRobolectricTest {
         assertEquals(TaggingMode.DATASET_SIDECAR, initial.mode)
 
         repo.setMode(TaggingMode.HEADER_METADATA)
+        repo.setLayoutMode(WidescreenLayoutMode.WIDESCREEN)
         repo.setRandomOrder(true)
         repo.setDefaultDirection(SwipeDirection.UP)
         repo.updateDirectionTag(SwipeDirection.UP, "hero_shot")
@@ -45,6 +47,7 @@ class ExampleRobolectricTest {
 
         val saved = repo.settingsFlow.first()
         assertEquals(TaggingMode.HEADER_METADATA, saved.mode)
+        assertEquals(WidescreenLayoutMode.WIDESCREEN, saved.layoutMode)
         assertTrue(saved.isRandomOrder)
         assertEquals(SwipeDirection.UP, saved.defaultDirection)
         assertEquals("hero_shot", saved.directionTags[SwipeDirection.UP])

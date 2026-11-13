@@ -21,8 +21,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.Add
@@ -42,16 +46,20 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.ViewSidebar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -78,12 +86,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.model.ImageItem
 import com.example.model.SwipeDirection
 import com.example.model.TaggingMode
+import com.example.model.WidescreenLayoutMode
 import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.ManualTagDialog
 import com.example.ui.components.QuickDirectionsSheet
@@ -97,6 +108,7 @@ import com.example.ui.theme.SlateTextMuted
 import com.example.ui.theme.SlateTextSecondary
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioSurface
+import com.example.ui.theme.StudioSurfaceBright
 import com.example.ui.theme.StudioSurfaceElevated
 import com.example.ui.theme.TealAccent
 import com.example.ui.theme.VioletAccent
@@ -117,6 +129,7 @@ fun TaggerWorkspaceScreen(
     onTriggerDefaultSwipe: () -> Unit,
     onPreviousImage: () -> Unit,
     onToggleRandomOrder: () -> Unit,
+    onToggleWidescreenView: (currentlyWide: Boolean) -> Unit,
     onSelectMode: (TaggingMode) -> Unit,
     onUpdateDirectionTag: (SwipeDirection, String) -> Unit,
     onSelectDefaultDirection: (SwipeDirection) -> Unit,
@@ -177,6 +190,7 @@ fun TaggerWorkspaceScreen(
                 onTriggerDefaultSwipe = onTriggerDefaultSwipe,
                 onPreviousImage = onPreviousImage,
                 onToggleRandomOrder = onToggleRandomOrder,
+                onToggleWidescreenView = onToggleWidescreenView,
                 onUpdateDirectionTag = onUpdateDirectionTag,
                 onSelectDefaultDirection = onSelectDefaultDirection,
                 onAddManualTags = onAddManualTags,
@@ -201,6 +215,7 @@ private fun ActiveCanvasWorkspace(
     onTriggerDefaultSwipe: () -> Unit,
     onPreviousImage: () -> Unit,
     onToggleRandomOrder: () -> Unit,
+    onToggleWidescreenView: (currentlyWide: Boolean) -> Unit,
     onUpdateDirectionTag: (SwipeDirection, String) -> Unit,
     onSelectDefaultDirection: (SwipeDirection) -> Unit,
     onAddManualTags: (String) -> Unit,
@@ -211,7 +226,6 @@ private fun ActiveCanvasWorkspace(
     onHardwareKeyDown: (Int) -> Boolean,
     onDismissBanner: () -> Unit,
 ) {
-    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val hasHardwareKeyboard = configuration.keyboard != Configuration.KEYBOARD_NOKEYS
 
@@ -226,43 +240,10 @@ private fun ActiveCanvasWorkspace(
         }
     }
 
-    // Auto-hide feedback banner after 2.6 seconds
     LaunchedEffect(uiState.feedbackBanner) {
         if (uiState.feedbackBanner != null) {
             delay(2600)
             onDismissBanner()
-        }
-    }
-
-    val coroutineScope = rememberCoroutineScope()
-    val offsetX = remember { Animatable(0f) }
-    val offsetY = remember { Animatable(0f) }
-    val swipeThresholdPx = with(LocalDensity.current) { 110.dp.toPx() }
-
-    LaunchedEffect(ready.currentItem.uri, ready.currentIndex, ready.passCount) {
-        offsetX.snapTo(0f)
-        offsetY.snapTo(0f)
-    }
-
-    val activeDragDirection by remember {
-        derivedStateOf {
-            val dx = offsetX.value
-            val dy = offsetY.value
-            val mag = max(abs(dx), abs(dy))
-            if (mag < swipeThresholdPx * 0.22f) {
-                null
-            } else if (abs(dx) > abs(dy)) {
-                if (dx > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
-            } else {
-                if (dy < 0) SwipeDirection.UP else SwipeDirection.DOWN
-            }
-        }
-    }
-
-    val dragProgress by remember {
-        derivedStateOf {
-            val mag = max(abs(offsetX.value), abs(offsetY.value))
-            (mag / swipeThresholdPx).coerceIn(0f, 1f)
         }
     }
 
@@ -285,574 +266,479 @@ private fun ActiveCanvasWorkspace(
                 }
             },
     ) {
+        val useWidescreenLayout = when (settings.layoutMode) {
+            WidescreenLayoutMode.WIDESCREEN -> true
+            WidescreenLayoutMode.OVERLAY -> false
+            WidescreenLayoutMode.AUTO -> maxWidth >= 600.dp || maxWidth > maxHeight
+        }
         val isCompactWidth = maxWidth < 420.dp
 
-        // 1. Full-screen swipeable image stage
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(currentItem.uri, ready.currentIndex, ready.passCount) {
-                    detectTapGestures(
-                        onDoubleTap = { onTriggerDefaultSwipe() },
+        if (useWidescreenLayout) {
+            val inspectorWidth: Dp = when {
+                maxWidth >= 1040.dp -> 380.dp
+                maxWidth >= 760.dp -> 332.dp
+                maxWidth >= 560.dp -> 284.dp
+                else -> 220.dp
+            }
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Left: Unobstructed widescreen photo viewport
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(ObsidianCanvas),
+                ) {
+                    SwipeablePhotoStage(
+                        currentItem = currentItem,
+                        passCount = ready.passCount,
+                        currentIndex = ready.currentIndex,
+                        directionTags = settings.directionTags,
+                        onSwipeDirection = onSwipeDirection,
+                        onDoubleTapDefault = onTriggerDefaultSwipe,
                     )
-                }
-                .pointerInput(currentItem.uri, ready.currentIndex, ready.passCount) {
-                    detectDragGestures(
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                val dx = offsetX.value
-                                val dy = offsetY.value
-                                val mag = max(abs(dx), abs(dy))
-                                if (mag >= swipeThresholdPx) {
-                                    val dir = if (abs(dx) > abs(dy)) {
-                                        if (dx > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
-                                    } else {
-                                        if (dy < 0) SwipeDirection.UP else SwipeDirection.DOWN
-                                    }
-                                    val targetX = when (dir) {
-                                        SwipeDirection.LEFT -> -1400f
-                                        SwipeDirection.RIGHT -> 1400f
-                                        else -> dx * 1.4f
-                                    }
-                                    val targetY = when (dir) {
-                                        SwipeDirection.UP -> -1600f
-                                        SwipeDirection.DOWN -> 1600f
-                                        else -> dy * 1.4f
-                                    }
-                                    launch { offsetX.animateTo(targetX, tween(140)) }
-                                    offsetY.animateTo(targetY, tween(140))
-                                    onSwipeDirection(dir)
-                                } else {
-                                    launch { offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
-                                    offsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
+
+                    // Minimal top-left folder + pass telemetry overlay
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .statusBarsPadding()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FolderTelemetryPill(
+                            folderName = ready.folderName,
+                            passCount = ready.passCount,
+                            currentIndex = ready.currentIndex,
+                            totalItems = ready.items.size,
+                            mode = settings.mode,
+                            compact = false,
+                            onPickDirectory = onPickDirectory,
+                        )
+                    }
+
+                    // Bottom-left quick navigation pill for trackpad/mouse
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .navigationBarsPadding()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (ready.items.size > 1) {
+                            Surface(
+                                onClick = onPreviousImage,
+                                shape = RoundedCornerShape(10.dp),
+                                color = StudioSurface.copy(alpha = 0.82f),
+                                border = BorderStroke(1.dp, StudioBorder),
+                                modifier = Modifier.testTag("previous_image_button"),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                                        contentDescription = "Previous image",
+                                        tint = IvoryText,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Text(
+                                        text = "Prev",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = IvoryText,
+                                    )
                                 }
                             }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                launch { offsetX.animateTo(0f, spring()) }
-                                offsetY.animateTo(0f, spring())
-                            }
-                        },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            coroutineScope.launch {
-                                offsetX.snapTo(offsetX.value + dragAmount.x)
-                                offsetY.snapTo(offsetY.value + dragAmount.y)
-                            }
-                        },
-                    )
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(currentItem.uri)
-                    .crossfade(120)
-                    .build(),
-                contentDescription = currentItem.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset {
-                        IntOffset(offsetX.value.roundToInt(), offsetY.value.roundToInt())
-                    }
-                    .graphicsLayer {
-                        rotationZ = (offsetX.value / 45f).coerceIn(-10f, 10f)
-                        val scale = 1f - (dragProgress * 0.04f)
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .testTag("fullscreen_image_canvas"),
-            )
+                        }
 
-            // Directional swipe HUD reticle
-            activeDragDirection?.let { dir ->
-                val accent = directionAccentColor(dir)
-                val tag = settings.directionTags[dir].orEmpty().trim()
-                val label = if (tag.isNotEmpty()) "+ $tag" else "Next (skip)"
-
-                Surface(
-                    shape = RoundedCornerShape(22.dp),
-                    color = ObsidianCanvas.copy(alpha = 0.86f),
-                    border = BorderStroke(2.dp, accent.copy(alpha = (0.4f + dragProgress * 0.6f).coerceIn(0f, 1f))),
-                    tonalElevation = 8.dp,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = (0.35f + dragProgress * 0.65f).coerceIn(0f, 1f)
-                        val s = 0.9f + dragProgress * 0.14f
-                        scaleX = s
-                        scaleY = s
-                    },
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(
-                            imageVector = directionVectorIcon(dir),
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.size(26.dp),
-                        )
-                        Column {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = StudioSurface.copy(alpha = 0.72f),
+                            border = BorderStroke(1.dp, StudioBorder.copy(alpha = 0.7f)),
+                        ) {
                             Text(
-                                text = dir.label.uppercase(),
+                                text = "Swipe photo or use Arrow keys · Double-tap for Default",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = accent,
-                            )
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = IvoryText,
+                                color = SlateTextSecondary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             )
                         }
                     }
                 }
+
+                VerticalDivider(color = StudioBorder, thickness = 1.dp)
+
+                // Right: Widescreen Studio Inspector & Command Pane
+                WidescreenInspectorPane(
+                    width = inspectorWidth,
+                    uiState = uiState,
+                    ready = ready,
+                    onToggleWidescreen = { onToggleWidescreenView(true) },
+                    onToggleRandomOrder = onToggleRandomOrder,
+                    onEditDirections = { showDirectionsSheet = true },
+                    onOpenSettings = onOpenSettings,
+                    onRequestDelete = onRequestDelete,
+                    onAddManualCaption = { showManualTagDialog = true },
+                    onRemoveTag = onRemoveTag,
+                    onSwipeDirection = onSwipeDirection,
+                    onTriggerDefaultSwipe = onTriggerDefaultSwipe,
+                    onHardwareKeyDown = onHardwareKeyDown,
+                )
             }
-        }
+        } else {
+            // Portrait / Full-Bleed Overlay Layout
+            Box(modifier = Modifier.fillMaxSize()) {
+                SwipeablePhotoStage(
+                    currentItem = currentItem,
+                    passCount = ready.passCount,
+                    currentIndex = ready.currentIndex,
+                    directionTags = settings.directionTags,
+                    onSwipeDirection = onSwipeDirection,
+                    onDoubleTapDefault = onTriggerDefaultSwipe,
+                )
 
-        // 2. Top edge gradient scrim for legibility
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(130.dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            ObsidianCanvas.copy(alpha = 0.82f),
-                            ObsidianCanvas.copy(alpha = 0.35f),
-                            Color.Transparent,
+                // Top edge gradient scrim
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(130.dp)
+                        .align(Alignment.TopCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    ObsidianCanvas.copy(alpha = 0.82f),
+                                    ObsidianCanvas.copy(alpha = 0.35f),
+                                    Color.Transparent,
+                                ),
+                            ),
                         ),
-                    ),
-                ),
-        )
+                )
 
-        // 3. Bottom edge gradient scrim for legibility
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(210.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            ObsidianCanvas.copy(alpha = 0.68f),
-                            ObsidianCanvas.copy(alpha = 0.92f),
+                // Bottom edge gradient scrim
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(210.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    ObsidianCanvas.copy(alpha = 0.68f),
+                                    ObsidianCanvas.copy(alpha = 0.92f),
+                                ),
+                            ),
                         ),
-                    ),
-                ),
-        )
+                )
 
-        // 4. Top Translucent HUD Bar (with small Delete button in top right)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            // Left telemetry cluster: folder + pass/index + mode badge
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Surface(
-                    onClick = onPickDirectory,
-                    shape = RoundedCornerShape(12.dp),
-                    color = StudioSurface.copy(alpha = 0.78f),
-                    border = BorderStroke(1.dp, StudioBorder.copy(alpha = 0.8f)),
-                    modifier = Modifier.testTag("change_folder_pill"),
+                // Top Translucent HUD Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FolderOpen,
-                            contentDescription = "Select folder",
-                            tint = AmberAccent,
-                            modifier = Modifier.size(16.dp),
+                    Box(modifier = Modifier.weight(1f)) {
+                        FolderTelemetryPill(
+                            folderName = ready.folderName,
+                            passCount = ready.passCount,
+                            currentIndex = ready.currentIndex,
+                            totalItems = ready.items.size,
+                            mode = settings.mode,
+                            compact = isCompactWidth,
+                            onPickDirectory = onPickDirectory,
                         )
-                        if (!isCompactWidth) {
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        IconButton(
+                            onClick = { onToggleWidescreenView(false) },
+                            modifier = Modifier.testTag("widescreen_toggle_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ViewSidebar,
+                                contentDescription = "Switch to widescreen split view",
+                                tint = SlateTextSecondary,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onToggleRandomOrder,
+                            modifier = Modifier.testTag("shuffle_toggle_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Shuffle,
+                                contentDescription = if (settings.isRandomOrder) "Random order on" else "Random order off",
+                                tint = if (settings.isRandomOrder) VioletAccent else SlateTextSecondary,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showDirectionsSheet = true },
+                            modifier = Modifier.testTag("quick_directions_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.OpenWith,
+                                contentDescription = "Edit swipe directions",
+                                tint = IvoryText,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showHotkeyStrip = !showHotkeyStrip },
+                            modifier = Modifier.testTag("toggle_hotkeys_hud_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Keyboard,
+                                contentDescription = "Toggle hotkey bar",
+                                tint = if (showHotkeyStrip) AmberAccent else SlateTextSecondary,
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.testTag("open_settings_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = "Open settings",
+                                tint = IvoryText,
+                            )
+                        }
+
+                        TopRightDeleteButton(onClick = onRequestDelete)
+                    }
+                }
+
+                // Bottom Translucent Dock
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FeedbackBannerPill(
+                        message = uiState.feedbackBanner,
+                        isError = uiState.feedbackIsError,
+                    )
+
+                    AnimatedVisibility(visible = showHotkeyStrip) {
+                        val activeHotkeys = settings.hotkeys.filter { it.tag.isNotBlank() }
+                        if (activeHotkeys.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                activeHotkeys.forEach { hk ->
+                                    Surface(
+                                        onClick = { onHardwareKeyDown(hk.keyCode) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = StudioSurface.copy(alpha = 0.84f),
+                                        border = BorderStroke(1.dp, StudioBorder),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = AmberAccent.copy(alpha = 0.2f),
+                                            ) {
+                                                Text(
+                                                    text = hk.keyLabel,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = AmberAccent,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                )
+                                            }
+                                            Text(
+                                                text = hk.tag,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = IvoryText,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            if (ready.items.size > 1) {
+                                Surface(
+                                    onClick = onPreviousImage,
+                                    shape = CircleShape,
+                                    color = StudioSurface.copy(alpha = 0.8f),
+                                    border = BorderStroke(1.dp, StudioBorder),
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .testTag("previous_image_button"),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                                            contentDescription = "Previous image",
+                                            tint = IvoryText,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                            }
+
                             Text(
-                                text = ready.folderName,
-                                style = MaterialTheme.typography.labelLarge,
+                                text = currentItem.name,
+                                style = MaterialTheme.typography.labelMedium,
                                 color = IvoryText,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        Text(
-                            text = "P${ready.passCount} · ${ready.currentIndex + 1}/${ready.items.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = SlateTextSecondary,
-                        )
-                    }
-                }
 
-                val modeColor = if (settings.mode == TaggingMode.DATASET_SIDECAR) AmberAccent else TealAccent
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = modeColor.copy(alpha = 0.18f),
-                    border = BorderStroke(1.dp, modeColor.copy(alpha = 0.5f)),
-                ) {
-                    Text(
-                        text = settings.mode.shortBadge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = modeColor,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            // Right utility icons + small top-right Delete button
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                IconButton(
-                    onClick = onToggleRandomOrder,
-                    modifier = Modifier.testTag("shuffle_toggle_button"),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Shuffle,
-                        contentDescription = if (settings.isRandomOrder) "Random order on" else "Random order off",
-                        tint = if (settings.isRandomOrder) VioletAccent else SlateTextSecondary,
-                    )
-                }
-
-                IconButton(
-                    onClick = { showDirectionsSheet = true },
-                    modifier = Modifier.testTag("quick_directions_button"),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.OpenWith,
-                        contentDescription = "Edit swipe directions",
-                        tint = IvoryText,
-                    )
-                }
-
-                IconButton(
-                    onClick = { showHotkeyStrip = !showHotkeyStrip },
-                    modifier = Modifier.testTag("toggle_hotkeys_hud_button"),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Keyboard,
-                        contentDescription = "Toggle hotkey bar",
-                        tint = if (showHotkeyStrip) AmberAccent else SlateTextSecondary,
-                    )
-                }
-
-                IconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.testTag("open_settings_button"),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Settings,
-                        contentDescription = "Open settings",
-                        tint = IvoryText,
-                    )
-                }
-
-                // Small Delete Button in Top Right (48dp touch target, compact 32dp visual pill)
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("delete_image_button")
-                        .clickable(onClick = onRequestDelete),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = CoralAccent.copy(alpha = 0.18f),
-                        border = BorderStroke(1.dp, CoralAccent.copy(alpha = 0.6f)),
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.DeleteOutline,
-                                contentDescription = "Delete current image",
-                                tint = CoralAccent,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 5. Bottom Translucent Dock: Feedback toast, filename, tags, swipe legend & hotkeys
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            // Feedback banner
-            AnimatedVisibility(
-                visible = uiState.feedbackBanner != null,
-                enter = fadeIn() + slideInVertically { it / 2 },
-                exit = fadeOut() + slideOutVertically { it / 2 },
-            ) {
-                uiState.feedbackBanner?.let { msg ->
-                    val bannerAccent = if (uiState.feedbackIsError) CoralAccent else TealAccent
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = StudioSurfaceElevated.copy(alpha = 0.94f),
-                        border = BorderStroke(1.dp, bannerAccent.copy(alpha = 0.55f)),
-                    ) {
-                        Text(
-                            text = msg,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (uiState.feedbackIsError) CoralAccent else IvoryText,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        )
-                    }
-                }
-            }
-
-            // Active Keyboard Hotkeys strip (shown when keyboard attached or toggled on)
-            AnimatedVisibility(visible = showHotkeyStrip) {
-                val activeHotkeys = settings.hotkeys.filter { it.tag.isNotBlank() }
-                if (activeHotkeys.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        activeHotkeys.forEach { hk ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val defaultDir = settings.defaultDirection
+                            val defaultAccent = directionAccentColor(defaultDir)
+                            val defaultTag = settings.directionTags[defaultDir].orEmpty().trim()
                             Surface(
-                                onClick = { onHardwareKeyDown(hk.keyCode) },
-                                shape = RoundedCornerShape(8.dp),
-                                color = StudioSurface.copy(alpha = 0.84f),
-                                border = BorderStroke(1.dp, StudioBorder),
+                                onClick = onTriggerDefaultSwipe,
+                                shape = RoundedCornerShape(10.dp),
+                                color = defaultAccent.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, defaultAccent.copy(alpha = 0.6f)),
+                                modifier = Modifier.testTag("default_swipe_action_button"),
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = AmberAccent.copy(alpha = 0.2f),
-                                    ) {
-                                        Text(
-                                            text = hk.keyLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = AmberAccent,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Rounded.Bolt,
+                                        contentDescription = "Apply default swipe action",
+                                        tint = defaultAccent,
+                                        modifier = Modifier.size(14.dp),
+                                    )
                                     Text(
-                                        text = hk.tag,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = "${defaultDir.arrowSymbol} ${defaultTag.ifBlank { "Next" }}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = defaultAccent,
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                onClick = { showManualTagDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                color = StudioSurfaceElevated.copy(alpha = 0.9f),
+                                border = BorderStroke(1.dp, StudioBorder),
+                                modifier = Modifier.testTag("add_manual_caption_button"),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Add,
+                                        contentDescription = "Add manual caption",
+                                        tint = IvoryText,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                    Text(
+                                        text = "Caption",
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = IvoryText,
                                     )
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // Filename + Action controls row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    if (ready.items.size > 1) {
-                        Surface(
-                            onClick = onPreviousImage,
-                            shape = CircleShape,
-                            color = StudioSurface.copy(alpha = 0.8f),
-                            border = BorderStroke(1.dp, StudioBorder),
-                            modifier = Modifier
-                                .size(34.dp)
-                                .testTag("previous_image_button"),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                                    contentDescription = "Previous image",
-                                    tint = IvoryText,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = currentItem.name,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = IvoryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Quick trigger for user's Default Direction
-                    val defaultDir = settings.defaultDirection
-                    val defaultAccent = directionAccentColor(defaultDir)
-                    val defaultTag = settings.directionTags[defaultDir].orEmpty().trim()
-                    Surface(
-                        onClick = onTriggerDefaultSwipe,
-                        shape = RoundedCornerShape(10.dp),
-                        color = defaultAccent.copy(alpha = 0.2f),
-                        border = BorderStroke(1.dp, defaultAccent.copy(alpha = 0.6f)),
-                        modifier = Modifier.testTag("default_swipe_action_button"),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Bolt,
-                                contentDescription = "Apply default swipe action",
-                                tint = defaultAccent,
-                                modifier = Modifier.size(14.dp),
-                            )
+                        if (currentItem.tags.isEmpty()) {
                             Text(
-                                text = "${defaultDir.arrowSymbol} ${defaultTag.ifBlank { "Next" }}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = defaultAccent,
-                            )
-                        }
-                    }
-
-                    // + Caption button
-                    Surface(
-                        onClick = { showManualTagDialog = true },
-                        shape = RoundedCornerShape(10.dp),
-                        color = StudioSurfaceElevated.copy(alpha = 0.9f),
-                        border = BorderStroke(1.dp, StudioBorder),
-                        modifier = Modifier.testTag("add_manual_caption_button"),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = "Add manual caption",
-                                tint = IvoryText,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Text(
-                                text = "Caption",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = IvoryText,
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Appended tags row (removable chips)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (currentItem.tags.isEmpty()) {
-                    Text(
-                        text = "No tags yet — swipe any direction or tap + Caption",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SlateTextMuted,
-                    )
-                } else {
-                    currentItem.tags.forEach { tag ->
-                        Surface(
-                            onClick = { onRemoveTag(tag) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = StudioSurfaceElevated.copy(alpha = 0.88f),
-                            border = BorderStroke(1.dp, StudioBorder),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(
-                                    text = tag,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = IvoryText,
-                                )
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Remove tag $tag",
-                                    tint = SlateTextSecondary,
-                                    modifier = Modifier.size(12.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Compact 4-way directional swipe legend (tappable for accessibility / mouse users)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SwipeDirection.entries.forEach { dir ->
-                    val accent = directionAccentColor(dir)
-                    val tag = settings.directionTags[dir].orEmpty().trim()
-                    val isDefault = dir == settings.defaultDirection
-
-                    Surface(
-                        onClick = { onSwipeDirection(dir) },
-                        shape = RoundedCornerShape(8.dp),
-                        color = StudioSurface.copy(alpha = 0.78f),
-                        border = BorderStroke(
-                            width = if (isDefault) 1.2.dp else 1.dp,
-                            color = if (isDefault) accent.copy(alpha = 0.7f) else StudioBorder.copy(alpha = 0.7f),
-                        ),
-                        modifier = Modifier.testTag("swipe_chip_${dir.name.lowercase()}"),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = dir.arrowSymbol,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = accent,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                text = tag.ifBlank { "skip" },
+                                text = "No tags yet — swipe any direction or tap + Caption",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (tag.isBlank()) SlateTextMuted else IvoryText,
+                                color = SlateTextMuted,
                             )
+                        } else {
+                            currentItem.tags.forEach { tag ->
+                                RemovableTagChip(tag = tag, onRemove = { onRemoveTag(tag) })
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        SwipeDirection.entries.forEach { dir ->
+                            val accent = directionAccentColor(dir)
+                            val tag = settings.directionTags[dir].orEmpty().trim()
+                            val isDefault = dir == settings.defaultDirection
+
+                            Surface(
+                                onClick = { onSwipeDirection(dir) },
+                                shape = RoundedCornerShape(8.dp),
+                                color = StudioSurface.copy(alpha = 0.78f),
+                                border = BorderStroke(
+                                    width = if (isDefault) 1.2.dp else 1.dp,
+                                    color = if (isDefault) accent.copy(alpha = 0.7f) else StudioBorder.copy(alpha = 0.7f),
+                                ),
+                                modifier = Modifier.testTag("swipe_chip_${dir.name.lowercase()}"),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        text = dir.arrowSymbol,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = accent,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        text = tag.ifBlank { "skip" },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (tag.isBlank()) SlateTextMuted else IvoryText,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -885,5 +771,745 @@ private fun ActiveCanvasWorkspace(
             onSelectDefaultDirection = onSelectDefaultDirection,
             onDismiss = { showDirectionsSheet = false },
         )
+    }
+}
+
+@Composable
+private fun SwipeablePhotoStage(
+    currentItem: ImageItem,
+    passCount: Int,
+    currentIndex: Int,
+    directionTags: Map<SwipeDirection, String>,
+    onSwipeDirection: (SwipeDirection) -> Unit,
+    onDoubleTapDefault: () -> Unit,
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val offsetX = remember { Animatable(0f) }
+    val offsetY = remember { Animatable(0f) }
+    val swipeThresholdPx = with(LocalDensity.current) { 110.dp.toPx() }
+
+    LaunchedEffect(currentItem.uri, currentIndex, passCount) {
+        offsetX.snapTo(0f)
+        offsetY.snapTo(0f)
+    }
+
+    val activeDragDirection by remember {
+        derivedStateOf {
+            val dx = offsetX.value
+            val dy = offsetY.value
+            val mag = max(abs(dx), abs(dy))
+            if (mag < swipeThresholdPx * 0.22f) {
+                null
+            } else if (abs(dx) > abs(dy)) {
+                if (dx > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
+            } else {
+                if (dy < 0) SwipeDirection.UP else SwipeDirection.DOWN
+            }
+        }
+    }
+
+    val dragProgress by remember {
+        derivedStateOf {
+            val mag = max(abs(offsetX.value), abs(offsetY.value))
+            (mag / swipeThresholdPx).coerceIn(0f, 1f)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(currentItem.uri, currentIndex, passCount) {
+                detectTapGestures(onDoubleTap = { onDoubleTapDefault() })
+            }
+            .pointerInput(currentItem.uri, currentIndex, passCount) {
+                detectDragGestures(
+                    onDragEnd = {
+                        coroutineScope.launch {
+                            val dx = offsetX.value
+                            val dy = offsetY.value
+                            val mag = max(abs(dx), abs(dy))
+                            if (mag >= swipeThresholdPx) {
+                                val dir = if (abs(dx) > abs(dy)) {
+                                    if (dx > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
+                                } else {
+                                    if (dy < 0) SwipeDirection.UP else SwipeDirection.DOWN
+                                }
+                                val targetX = when (dir) {
+                                    SwipeDirection.LEFT -> -1400f
+                                    SwipeDirection.RIGHT -> 1400f
+                                    else -> dx * 1.4f
+                                }
+                                val targetY = when (dir) {
+                                    SwipeDirection.UP -> -1600f
+                                    SwipeDirection.DOWN -> 1600f
+                                    else -> dy * 1.4f
+                                }
+                                launch { offsetX.animateTo(targetX, tween(140)) }
+                                offsetY.animateTo(targetY, tween(140))
+                                onSwipeDirection(dir)
+                            } else {
+                                launch { offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
+                                offsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            launch { offsetX.animateTo(0f, spring()) }
+                            offsetY.animateTo(0f, spring())
+                        }
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        coroutineScope.launch {
+                            offsetX.snapTo(offsetX.value + dragAmount.x)
+                            offsetY.snapTo(offsetY.value + dragAmount.y)
+                        }
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(currentItem.uri)
+                .crossfade(120)
+                .build(),
+            contentDescription = currentItem.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .offset {
+                    IntOffset(offsetX.value.roundToInt(), offsetY.value.roundToInt())
+                }
+                .graphicsLayer {
+                    rotationZ = (offsetX.value / 45f).coerceIn(-10f, 10f)
+                    val scale = 1f - (dragProgress * 0.04f)
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .testTag("fullscreen_image_canvas"),
+        )
+
+        activeDragDirection?.let { dir ->
+            val accent = directionAccentColor(dir)
+            val tag = directionTags[dir].orEmpty().trim()
+            val label = if (tag.isNotEmpty()) "+ $tag" else "Next (skip)"
+
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = ObsidianCanvas.copy(alpha = 0.86f),
+                border = BorderStroke(2.dp, accent.copy(alpha = (0.4f + dragProgress * 0.6f).coerceIn(0f, 1f))),
+                tonalElevation = 8.dp,
+                modifier = Modifier.graphicsLayer {
+                    alpha = (0.35f + dragProgress * 0.65f).coerceIn(0f, 1f)
+                    val s = 0.9f + dragProgress * 0.14f
+                    scaleX = s
+                    scaleY = s
+                },
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = directionVectorIcon(dir),
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(26.dp),
+                    )
+                    Column {
+                        Text(
+                            text = dir.label.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = accent,
+                        )
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = IvoryText,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WidescreenInspectorPane(
+    width: Dp,
+    uiState: TagSwipeUiState,
+    ready: WorkspaceState.Ready,
+    onToggleWidescreen: () -> Unit,
+    onToggleRandomOrder: () -> Unit,
+    onEditDirections: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onRequestDelete: () -> Unit,
+    onAddManualCaption: () -> Unit,
+    onRemoveTag: (String) -> Unit,
+    onSwipeDirection: (SwipeDirection) -> Unit,
+    onTriggerDefaultSwipe: () -> Unit,
+    onHardwareKeyDown: (Int) -> Boolean,
+) {
+    val settings = uiState.settings
+    val currentItem = ready.currentItem
+
+    Column(
+        modifier = Modifier
+            .width(width)
+            .fillMaxHeight()
+            .background(StudioSurface)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+    ) {
+        // Top Utility Bar (includes small Delete button in top right)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "INSPECTOR",
+                style = MaterialTheme.typography.labelMedium,
+                color = SlateTextSecondary,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                IconButton(
+                    onClick = onToggleWidescreen,
+                    modifier = Modifier.testTag("widescreen_toggle_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Fullscreen,
+                        contentDescription = "Switch to full-bleed overlay view",
+                        tint = AmberAccent,
+                    )
+                }
+
+                IconButton(
+                    onClick = onToggleRandomOrder,
+                    modifier = Modifier.testTag("shuffle_toggle_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Shuffle,
+                        contentDescription = if (settings.isRandomOrder) "Random order on" else "Random order off",
+                        tint = if (settings.isRandomOrder) VioletAccent else SlateTextSecondary,
+                    )
+                }
+
+                IconButton(
+                    onClick = onEditDirections,
+                    modifier = Modifier.testTag("quick_directions_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.OpenWith,
+                        contentDescription = "Edit swipe directions",
+                        tint = IvoryText,
+                    )
+                }
+
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("open_settings_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = "Open settings",
+                        tint = IvoryText,
+                    )
+                }
+
+                TopRightDeleteButton(onClick = onRequestDelete)
+            }
+        }
+
+        HorizontalDivider(color = StudioBorder, thickness = 1.dp)
+
+        // Scrollable Inspector Body
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // File & Mode Card
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = StudioSurfaceElevated,
+                border = BorderStroke(1.dp, StudioBorder),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = currentItem.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = IvoryText,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val formatLabel = currentItem.mimeType.substringAfter('/', "IMG").uppercase()
+                        val sizeLabel = formatReadableSize(currentItem.sizeBytes)
+                        Text(
+                            text = if (sizeLabel.isNotEmpty()) "$formatLabel · $sizeLabel" else formatLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SlateTextSecondary,
+                        )
+                        Text(
+                            text = "Pass ${ready.passCount} · ${ready.currentIndex + 1}/${ready.items.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = AmberAccent,
+                        )
+                    }
+                }
+            }
+
+            // Appended Tags + Manual Caption Button
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "TAGS (${currentItem.tags.size})",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SlateTextSecondary,
+                    )
+                    Surface(
+                        onClick = onAddManualCaption,
+                        shape = RoundedCornerShape(8.dp),
+                        color = StudioSurfaceBright,
+                        border = BorderStroke(1.dp, StudioBorder),
+                        modifier = Modifier.testTag("add_manual_caption_button"),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = "Add manual caption",
+                                tint = IvoryText,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                text = "Caption",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = IvoryText,
+                            )
+                        }
+                    }
+                }
+
+                if (currentItem.tags.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = ObsidianCanvas.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, StudioBorder.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "No tags yet — swipe, click a direction below, or press a hotkey.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SlateTextMuted,
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        currentItem.tags.forEach { tag ->
+                            RemovableTagChip(tag = tag, onRemove = { onRemoveTag(tag) })
+                        }
+                    }
+                }
+            }
+
+            // 4-Way Swipe Pad (for mouse/trackpad & quick touch in widescreen)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "SWIPE PAD & DEFAULT",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SlateTextSecondary,
+                )
+
+                // Up button centered
+                DirectionPadButton(
+                    direction = SwipeDirection.UP,
+                    tag = settings.directionTags[SwipeDirection.UP].orEmpty(),
+                    isDefault = settings.defaultDirection == SwipeDirection.UP,
+                    onClick = { onSwipeDirection(SwipeDirection.UP) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Left + Default Center + Right
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    DirectionPadButton(
+                        direction = SwipeDirection.LEFT,
+                        tag = settings.directionTags[SwipeDirection.LEFT].orEmpty(),
+                        isDefault = settings.defaultDirection == SwipeDirection.LEFT,
+                        onClick = { onSwipeDirection(SwipeDirection.LEFT) },
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    val defaultAccent = directionAccentColor(settings.defaultDirection)
+                    Surface(
+                        onClick = onTriggerDefaultSwipe,
+                        shape = RoundedCornerShape(12.dp),
+                        color = defaultAccent.copy(alpha = 0.18f),
+                        border = BorderStroke(1.5.dp, defaultAccent),
+                        modifier = Modifier
+                            .weight(0.9f)
+                            .height(54.dp)
+                            .testTag("default_swipe_action_button"),
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Bolt,
+                                contentDescription = "Trigger default direction",
+                                tint = defaultAccent,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = "DEFAULT",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = defaultAccent,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+
+                    DirectionPadButton(
+                        direction = SwipeDirection.RIGHT,
+                        tag = settings.directionTags[SwipeDirection.RIGHT].orEmpty(),
+                        isDefault = settings.defaultDirection == SwipeDirection.RIGHT,
+                        onClick = { onSwipeDirection(SwipeDirection.RIGHT) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                // Down button centered
+                DirectionPadButton(
+                    direction = SwipeDirection.DOWN,
+                    tag = settings.directionTags[SwipeDirection.DOWN].orEmpty(),
+                    isDefault = settings.defaultDirection == SwipeDirection.DOWN,
+                    onClick = { onSwipeDirection(SwipeDirection.DOWN) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            // Active Keyboard Hotkeys (2-column compact clickable keycap grid)
+            val activeHotkeys = settings.hotkeys.filter { it.tag.isNotBlank() }
+            if (activeHotkeys.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "HOTKEYS (CLICK OR PRESS KEY)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SlateTextSecondary,
+                    )
+                    activeHotkeys.chunked(2).forEach { pair ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            pair.forEach { hk ->
+                                Surface(
+                                    onClick = { onHardwareKeyDown(hk.keyCode) },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = StudioSurfaceElevated,
+                                    border = BorderStroke(1.dp, StudioBorder),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(5.dp),
+                                            color = AmberAccent.copy(alpha = 0.2f),
+                                        ) {
+                                            Text(
+                                                text = hk.keyLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = AmberAccent,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                            )
+                                        }
+                                        Text(
+                                            text = hk.tag,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = IvoryText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            if (pair.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pinned Feedback Banner at bottom of inspector
+        AnimatedVisibility(visible = uiState.feedbackBanner != null) {
+            Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                FeedbackBannerPill(
+                    message = uiState.feedbackBanner,
+                    isError = uiState.feedbackIsError,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DirectionPadButton(
+    direction: SwipeDirection,
+    tag: String,
+    isDefault: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = directionAccentColor(direction)
+    val cleanTag = tag.trim()
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = StudioSurfaceElevated,
+        border = BorderStroke(
+            width = if (isDefault) 1.5.dp else 1.dp,
+            color = if (isDefault) accent.copy(alpha = 0.75f) else StudioBorder,
+        ),
+        modifier = modifier
+            .height(54.dp)
+            .testTag("swipe_chip_${direction.name.lowercase()}"),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    imageVector = directionVectorIcon(direction),
+                    contentDescription = direction.label,
+                    tint = accent,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = cleanTag.ifBlank { "skip" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (cleanTag.isBlank()) SlateTextMuted else IvoryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderTelemetryPill(
+    folderName: String,
+    passCount: Int,
+    currentIndex: Int,
+    totalItems: Int,
+    mode: TaggingMode,
+    compact: Boolean,
+    onPickDirectory: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Surface(
+            onClick = onPickDirectory,
+            shape = RoundedCornerShape(12.dp),
+            color = StudioSurface.copy(alpha = 0.82f),
+            border = BorderStroke(1.dp, StudioBorder.copy(alpha = 0.8f)),
+            modifier = Modifier.testTag("change_folder_pill"),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.FolderOpen,
+                    contentDescription = "Select folder",
+                    tint = AmberAccent,
+                    modifier = Modifier.size(16.dp),
+                )
+                if (!compact) {
+                    Text(
+                        text = folderName,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = IvoryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "P$passCount · ${currentIndex + 1}/$totalItems",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SlateTextSecondary,
+                )
+            }
+        }
+
+        val modeColor = if (mode == TaggingMode.DATASET_SIDECAR) AmberAccent else TealAccent
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = modeColor.copy(alpha = 0.18f),
+            border = BorderStroke(1.dp, modeColor.copy(alpha = 0.5f)),
+        ) {
+            Text(
+                text = mode.shortBadge,
+                style = MaterialTheme.typography.labelSmall,
+                color = modeColor,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopRightDeleteButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .testTag("delete_image_button")
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = CoralAccent.copy(alpha = 0.18f),
+            border = BorderStroke(1.dp, CoralAccent.copy(alpha = 0.6f)),
+            modifier = Modifier.size(32.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteOutline,
+                    contentDescription = "Delete current image",
+                    tint = CoralAccent,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemovableTagChip(
+    tag: String,
+    onRemove: () -> Unit,
+) {
+    Surface(
+        onClick = onRemove,
+        shape = RoundedCornerShape(8.dp),
+        color = StudioSurfaceElevated.copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, StudioBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = tag,
+                style = MaterialTheme.typography.labelMedium,
+                color = IvoryText,
+            )
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Remove tag $tag",
+                tint = SlateTextSecondary,
+                modifier = Modifier.size(12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FeedbackBannerPill(
+    message: String?,
+    isError: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = message != null,
+        enter = fadeIn() + slideInVertically { it / 2 },
+        exit = fadeOut() + slideOutVertically { it / 2 },
+    ) {
+        message?.let { msg ->
+            val bannerAccent = if (isError) CoralAccent else TealAccent
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = StudioSurfaceElevated.copy(alpha = 0.94f),
+                border = BorderStroke(1.dp, bannerAccent.copy(alpha = 0.55f)),
+                modifier = modifier,
+            ) {
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isError) CoralAccent else IvoryText,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun formatReadableSize(bytes: Long): String {
+    if (bytes <= 0L) return ""
+    val kb = bytes / 1024.0
+    return if (kb < 1024.0) {
+        "${kb.roundToInt()} KB"
+    } else {
+        val mb = kb / 1024.0
+        String.format("%.1f MB", mb)
     }
 }

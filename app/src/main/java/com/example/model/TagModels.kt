@@ -20,6 +20,28 @@ enum class TaggingMode(
     ),
 }
 
+enum class WidescreenLayoutMode(
+    val title: String,
+    val shortLabel: String,
+    val description: String,
+) {
+    AUTO(
+        title = "Auto (Adaptive)",
+        shortLabel = "Auto",
+        description = "Uses split widescreen studio view in landscape, tablets, and Chromebooks; full-screen overlay in portrait.",
+    ),
+    WIDESCREEN(
+        title = "Widescreen Split Pane",
+        shortLabel = "Wide",
+        description = "Always shows the side inspector pane with clickable 4-way pad, tags, and hotkeys alongside the image.",
+    ),
+    OVERLAY(
+        title = "Full-Bleed Overlay",
+        shortLabel = "Full",
+        description = "Always keeps the photo full-screen edge-to-edge with floating translucent HUD controls.",
+    ),
+}
+
 enum class SwipeDirection(
     val label: String,
     val arrowSymbol: String,
@@ -44,6 +66,7 @@ data class AppSettings(
     val isRandomOrder: Boolean = false,
     val confirmBeforeDelete: Boolean = true,
     val autoAdvanceOnHotkey: Boolean = false,
+    val layoutMode: WidescreenLayoutMode = WidescreenLayoutMode.AUTO,
     val defaultDirection: SwipeDirection = SwipeDirection.RIGHT,
     val directionTags: Map<SwipeDirection, String> = defaultDirectionTags(),
     val hotkeys: List<HotkeyBinding> = defaultHotkeys(),

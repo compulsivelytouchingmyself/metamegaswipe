@@ -14,6 +14,7 @@ import com.example.model.HotkeyBinding
 import com.example.model.ImageItem
 import com.example.model.SwipeDirection
 import com.example.model.TaggingMode
+import com.example.model.WidescreenLayoutMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -418,6 +419,18 @@ class TagSwipeViewModel(application: Application) : AndroidViewModel(application
 
     fun setAutoAdvanceOnHotkey(autoAdvance: Boolean) {
         viewModelScope.launch { settingsRepo.setAutoAdvanceOnHotkey(autoAdvance) }
+    }
+
+    fun setLayoutMode(layoutMode: WidescreenLayoutMode) {
+        viewModelScope.launch {
+            settingsRepo.setLayoutMode(layoutMode)
+            showFeedback("View: ${layoutMode.title}", isError = false)
+        }
+    }
+
+    fun toggleWidescreenView(currentlyWide: Boolean) {
+        val next = if (currentlyWide) WidescreenLayoutMode.OVERLAY else WidescreenLayoutMode.WIDESCREEN
+        setLayoutMode(next)
     }
 
     fun setDefaultDirection(direction: SwipeDirection) {

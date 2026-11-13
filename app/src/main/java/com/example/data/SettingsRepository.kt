@@ -11,6 +11,7 @@ import com.example.model.AppSettings
 import com.example.model.HotkeyBinding
 import com.example.model.SwipeDirection
 import com.example.model.TaggingMode
+import com.example.model.WidescreenLayoutMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -27,6 +28,7 @@ class SettingsRepository(private val context: Context) {
         val IS_RANDOM_ORDER = booleanPreferencesKey("is_random_order")
         val CONFIRM_BEFORE_DELETE = booleanPreferencesKey("confirm_before_delete")
         val AUTO_ADVANCE_ON_HOTKEY = booleanPreferencesKey("auto_advance_on_hotkey")
+        val LAYOUT_MODE = stringPreferencesKey("layout_mode")
         val DEFAULT_DIRECTION = stringPreferencesKey("default_direction")
         val DIRECTION_TAGS_JSON = stringPreferencesKey("direction_tags_json")
         val HOTKEYS_JSON = stringPreferencesKey("hotkeys_json")
@@ -41,6 +43,10 @@ class SettingsRepository(private val context: Context) {
             ?.let { runCatching { SwipeDirection.valueOf(it) }.getOrNull() }
             ?: SwipeDirection.RIGHT
 
+        val layoutMode = prefs[Keys.LAYOUT_MODE]
+            ?.let { runCatching { WidescreenLayoutMode.valueOf(it) }.getOrNull() }
+            ?: WidescreenLayoutMode.AUTO
+
         val directionTags = parseDirectionTags(prefs[Keys.DIRECTION_TAGS_JSON])
         val hotkeys = parseHotkeys(prefs[Keys.HOTKEYS_JSON])
 
@@ -51,6 +57,7 @@ class SettingsRepository(private val context: Context) {
             isRandomOrder = prefs[Keys.IS_RANDOM_ORDER] ?: false,
             confirmBeforeDelete = prefs[Keys.CONFIRM_BEFORE_DELETE] ?: true,
             autoAdvanceOnHotkey = prefs[Keys.AUTO_ADVANCE_ON_HOTKEY] ?: false,
+            layoutMode = layoutMode,
             defaultDirection = defaultDir,
             directionTags = directionTags,
             hotkeys = hotkeys,
@@ -83,6 +90,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAutoAdvanceOnHotkey(autoAdvance: Boolean) {
         context.settingsDataStore.edit { it[Keys.AUTO_ADVANCE_ON_HOTKEY] = autoAdvance }
+    }
+
+    suspend fun setLayoutMode(layoutMode: WidescreenLayoutMode) {
+        context.settingsDataStore.edit { it[Keys.LAYOUT_MODE] = layoutMode.name }
     }
 
     suspend fun setDefaultDirection(direction: SwipeDirection) {

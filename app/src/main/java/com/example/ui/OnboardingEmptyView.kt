@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,7 +63,7 @@ fun OnboardingEmptyView(
     onPickDirectory: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -73,12 +74,14 @@ fun OnboardingEmptyView(
             .safeDrawingPadding(),
         contentAlignment = Alignment.Center,
     ) {
+        val isWidescreen = maxWidth >= 680.dp || maxWidth > maxHeight
+
         Column(
             modifier = Modifier
-                .widthIn(max = 600.dp)
+                .widthIn(max = if (isWidescreen) 1040.dp else 600.dp)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .padding(horizontal = 24.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             // Top bar
@@ -131,165 +134,214 @@ fun OnboardingEmptyView(
                 }
             }
 
-            // Hero Artwork Card
-            Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = StudioSurface,
-                border = BorderStroke(1.dp, StudioBorder),
-                modifier = Modifier.fillMaxWidth(),
+            if (isWidescreen) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1.05f),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        HeroArtworkCard(emptyFolderName = emptyFolderName, height = 240.dp)
+                        SelectDirectoryButton(
+                            emptyFolderName = emptyFolderName,
+                            onPickDirectory = onPickDirectory,
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        ModeSelectorBlock(
+                            selectedMode = selectedMode,
+                            onSelectMode = onSelectMode,
+                        )
+                    }
+                }
+            } else {
+                HeroArtworkCard(emptyFolderName = emptyFolderName, height = 210.dp)
+                ModeSelectorBlock(
+                    selectedMode = selectedMode,
+                    onSelectMode = onSelectMode,
+                )
+                Spacer(modifier = Modifier.weight(1f, fill = false))
+                SelectDirectoryButton(
+                    emptyFolderName = emptyFolderName,
+                    onPickDirectory = onPickDirectory,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroArtworkCard(
+    emptyFolderName: String?,
+    height: androidx.compose.ui.unit.Dp,
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = StudioSurface,
+        border = BorderStroke(1.dp, StudioBorder),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(height),
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.img_studio_hero),
+                contentDescription = "Darkroom studio workflow illustration",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(22.dp)),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                ObsidianCanvas.copy(alpha = 0.85f),
+                            ),
+                        ),
+                    ),
+            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Box(
+                Text(
+                    text = if (emptyFolderName != null) {
+                        "No images found in \"$emptyFolderName\""
+                    } else {
+                        "Swipe-speed image captioning"
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = IvoryText,
+                )
+                Text(
+                    text = if (emptyFolderName != null) {
+                        "Pick another folder containing JPG, PNG, WebP, or HEIC images."
+                    } else {
+                        "Swipe Up, Down, Left, or Right to append tags — sets loop automatically for multi-pass tagging."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SlateTextSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeSelectorBlock(
+    selectedMode: TaggingMode,
+    onSelectMode: (TaggingMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "CHOOSE TAGGING MODE",
+            style = MaterialTheme.typography.labelMedium,
+            color = SlateTextSecondary,
+        )
+
+        TaggingMode.entries.forEach { mode ->
+            val isSelected = mode == selectedMode
+            val accent = if (mode == TaggingMode.DATASET_SIDECAR) AmberAccent else TealAccent
+            val icon = if (mode == TaggingMode.DATASET_SIDECAR) {
+                Icons.Rounded.Description
+            } else {
+                Icons.Rounded.FolderOpen
+            }
+
+            Surface(
+                onClick = { onSelectMode(mode) },
+                shape = RoundedCornerShape(16.dp),
+                color = if (isSelected) StudioSurfaceElevated else StudioSurface,
+                border = BorderStroke(
+                    width = if (isSelected) 1.5.dp else 1.dp,
+                    color = if (isSelected) accent else StudioBorder,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("onboarding_mode_${mode.name.lowercase()}"),
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(210.dp),
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_studio_hero),
-                        contentDescription = "Darkroom studio workflow illustration",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(22.dp)),
-                    )
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        ObsidianCanvas.copy(alpha = 0.85f),
-                                    ),
-                                ),
-                            ),
-                    )
+                            .size(40.dp)
+                            .background(accent.copy(alpha = 0.16f), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = accent,
+                        )
+                    }
                     Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Text(
-                            text = if (emptyFolderName != null) {
-                                "No images found in \"$emptyFolderName\""
-                            } else {
-                                "Swipe-speed image captioning"
-                            },
-                            style = MaterialTheme.typography.titleLarge,
+                            text = mode.title,
+                            style = MaterialTheme.typography.titleMedium,
                             color = IvoryText,
                         )
                         Text(
-                            text = if (emptyFolderName != null) {
-                                "Pick another folder containing JPG, PNG, WebP, or HEIC images."
-                            } else {
-                                "Swipe Up, Down, Left, or Right to append tags — sets loop automatically for multi-pass tagging."
-                            },
+                            text = mode.description,
                             style = MaterialTheme.typography.bodyMedium,
                             color = SlateTextSecondary,
                         )
                     }
                 }
             }
-
-            // Mode Quick Selector
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "CHOOSE TAGGING MODE",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = SlateTextSecondary,
-                )
-
-                TaggingMode.entries.forEach { mode ->
-                    val isSelected = mode == selectedMode
-                    val accent = if (mode == TaggingMode.DATASET_SIDECAR) AmberAccent else TealAccent
-                    val icon = if (mode == TaggingMode.DATASET_SIDECAR) {
-                        Icons.Rounded.Description
-                    } else {
-                        Icons.Rounded.FolderOpen
-                    }
-
-                    Surface(
-                        onClick = { onSelectMode(mode) },
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (isSelected) StudioSurfaceElevated else StudioSurface,
-                        border = BorderStroke(
-                            width = if (isSelected) 1.5.dp else 1.dp,
-                            color = if (isSelected) accent else StudioBorder,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("onboarding_mode_${mode.name.lowercase()}"),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(accent.copy(alpha = 0.16f), RoundedCornerShape(10.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = accent,
-                                )
-                            }
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Text(
-                                        text = mode.title,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = IvoryText,
-                                    )
-                                }
-                                Text(
-                                    text = mode.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = SlateTextSecondary,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f, fill = false))
-
-            Button(
-                onClick = onPickDirectory,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AmberAccent,
-                    contentColor = ObsidianCanvas,
-                ),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp)
-                    .testTag("select_directory_button"),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CreateNewFolder,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = if (emptyFolderName != null) "Choose Different Directory" else "Select Image Directory",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
         }
+    }
+}
+
+@Composable
+private fun SelectDirectoryButton(
+    emptyFolderName: String?,
+    onPickDirectory: () -> Unit,
+) {
+    Button(
+        onClick = onPickDirectory,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = AmberAccent,
+            contentColor = ObsidianCanvas,
+        ),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .testTag("select_directory_button"),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.CreateNewFolder,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = if (emptyFolderName != null) "Choose Different Directory" else "Select Image Directory",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
